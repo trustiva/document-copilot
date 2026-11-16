@@ -53,7 +53,18 @@ def search_vector(
     """Execute semantic cosine-similarity search against document_chunks."""
     distance_expr = DocumentChunk.embedding.cosine_distance(query_vector).label("distance")
     stmt = (
-        select(DocumentChunk, SourceDocument, distance_expr)
+        select(
+            DocumentChunk.id,
+            DocumentChunk.chunk_index,
+            DocumentChunk.content,
+            SourceDocument.id.label("document_id"),
+            SourceDocument.ticker,
+            SourceDocument.form,
+            SourceDocument.filing_date,
+            SourceDocument.accession_number,
+            SourceDocument.source_url,
+            distance_expr,
+        )
         .join(SourceDocument, SourceDocument.id == DocumentChunk.document_id)
         .where(DocumentChunk.embedding.is_not(None))
     )
@@ -65,20 +76,21 @@ def search_vector(
     rows = session.execute(stmt).all()
 
     results: list[RetrievedPassage] = []
-    for rank_idx, (chunk, doc, dist) in enumerate(rows, start=1):
+    for rank_idx, row in enumerate(rows, start=1):
         # Convert cosine distance to approximate similarity score
+        dist = row.distance
         similarity = max(0.0, 1.0 - float(dist)) if dist is not None else 0.0
         results.append(
             RetrievedPassage(
-                chunk_id=chunk.id,
-                document_id=doc.id,
-                chunk_index=chunk.chunk_index,
-                content=chunk.content,
-                ticker=doc.ticker,
-                form=doc.form,
-                filing_date=doc.filing_date,
-                accession_number=doc.accession_number,
-                source_url=doc.source_url,
+                chunk_id=row.id,
+                document_id=row.document_id,
+                chunk_index=row.chunk_index,
+                content=row.content,
+                ticker=row.ticker,
+                form=row.form,
+                filing_date=row.filing_date,
+                accession_number=row.accession_number,
+                source_url=row.source_url,
                 score=similarity,
                 rank=rank_idx,
                 search_method="vector",
@@ -103,8 +115,20 @@ def search_fulltext(
     ts_query = func.websearch_to_tsquery("english", cleaned_query)
     rank_expr = func.ts_rank_cd(DocumentChunk.search_vector, ts_query).label("rank")
 
+    select_cols = (
+        DocumentChunk.id,
+        DocumentChunk.chunk_index,
+        DocumentChunk.content,
+        SourceDocument.id.label("document_id"),
+        SourceDocument.ticker,
+        SourceDocument.form,
+        SourceDocument.filing_date,
+        SourceDocument.accession_number,
+        SourceDocument.source_url,
+    )
+
     stmt = (
-        select(DocumentChunk, SourceDocument, rank_expr)
+        select(*select_cols, rank_expr)
         .join(SourceDocument, SourceDocument.id == DocumentChunk.document_id)
         .where(DocumentChunk.search_vector.op("@@")(ts_query))
     )
@@ -120,7 +144,7 @@ def search_fulltext(
         plain_query = func.plainto_tsquery("english", cleaned_query)
         plain_rank_expr = func.ts_rank_cd(DocumentChunk.search_vector, plain_query).label("rank")
         stmt_fallback = (
-            select(DocumentChunk, SourceDocument, plain_rank_expr)
+            select(*select_cols, plain_rank_expr)
             .join(SourceDocument, SourceDocument.id == DocumentChunk.document_id)
             .where(DocumentChunk.search_vector.op("@@")(plain_query))
         )
@@ -130,19 +154,19 @@ def search_fulltext(
         rows = session.execute(stmt_fallback).all()
 
     results: list[RetrievedPassage] = []
-    for rank_idx, (chunk, doc, rank_score) in enumerate(rows, start=1):
-        score_val = float(rank_score) if rank_score is not None else 0.0
+    for rank_idx, row in enumerate(rows, start=1):
+        score_val = float(row.rank) if row.rank is not None else 0.0
         results.append(
             RetrievedPassage(
-                chunk_id=chunk.id,
-                document_id=doc.id,
-                chunk_index=chunk.chunk_index,
-                content=chunk.content,
-                ticker=doc.ticker,
-                form=doc.form,
-                filing_date=doc.filing_date,
-                accession_number=doc.accession_number,
-                source_url=doc.source_url,
+                chunk_id=row.id,
+                document_id=row.document_id,
+                chunk_index=row.chunk_index,
+                content=row.content,
+                ticker=row.ticker,
+                form=row.form,
+                filing_date=row.filing_date,
+                accession_number=row.accession_number,
+                source_url=row.source_url,
                 score=score_val,
                 rank=rank_idx,
                 search_method="fulltext",

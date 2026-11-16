@@ -95,7 +95,17 @@ class DocumentRetriever:
 
         try:
             stmt = (
-                select(DocumentChunk, SourceDocument)
+                select(
+                    DocumentChunk.id,
+                    DocumentChunk.chunk_index,
+                    DocumentChunk.content,
+                    SourceDocument.id.label("document_id"),
+                    SourceDocument.ticker,
+                    SourceDocument.form,
+                    SourceDocument.filing_date,
+                    SourceDocument.accession_number,
+                    SourceDocument.source_url,
+                )
                 .join(SourceDocument, SourceDocument.id == DocumentChunk.document_id)
                 .where(DocumentChunk.id == chunk_id)
             )
@@ -103,17 +113,16 @@ class DocumentRetriever:
             if not row:
                 return None
 
-            chunk, doc = row
             return RetrievedPassage(
-                chunk_id=chunk.id,
-                document_id=doc.id,
-                chunk_index=chunk.chunk_index,
-                content=chunk.content,
-                ticker=doc.ticker,
-                form=doc.form,
-                filing_date=doc.filing_date,
-                accession_number=doc.accession_number,
-                source_url=doc.source_url,
+                chunk_id=row.id,
+                document_id=row.document_id,
+                chunk_index=row.chunk_index,
+                content=row.content,
+                ticker=row.ticker,
+                form=row.form,
+                filing_date=row.filing_date,
+                accession_number=row.accession_number,
+                source_url=row.source_url,
                 score=1.0,
                 rank=1,
                 search_method="direct",
@@ -145,7 +154,17 @@ class DocumentRetriever:
             max_idx = target_idx + window
 
             stmt_surrounding = (
-                select(DocumentChunk, SourceDocument)
+                select(
+                    DocumentChunk.id,
+                    DocumentChunk.chunk_index,
+                    DocumentChunk.content,
+                    SourceDocument.id.label("document_id"),
+                    SourceDocument.ticker,
+                    SourceDocument.form,
+                    SourceDocument.filing_date,
+                    SourceDocument.accession_number,
+                    SourceDocument.source_url,
+                )
                 .join(SourceDocument, SourceDocument.id == DocumentChunk.document_id)
                 .where(
                     DocumentChunk.document_id == doc_id,
@@ -158,20 +177,20 @@ class DocumentRetriever:
             rows = session.execute(stmt_surrounding).all()
             return [
                 RetrievedPassage(
-                    chunk_id=chunk.id,
-                    document_id=doc.id,
-                    chunk_index=chunk.chunk_index,
-                    content=chunk.content,
-                    ticker=doc.ticker,
-                    form=doc.form,
-                    filing_date=doc.filing_date,
-                    accession_number=doc.accession_number,
-                    source_url=doc.source_url,
+                    chunk_id=row.id,
+                    document_id=row.document_id,
+                    chunk_index=row.chunk_index,
+                    content=row.content,
+                    ticker=row.ticker,
+                    form=row.form,
+                    filing_date=row.filing_date,
+                    accession_number=row.accession_number,
+                    source_url=row.source_url,
                     score=1.0,
                     rank=idx,
                     search_method="surrounding",
                 )
-                for idx, (chunk, doc) in enumerate(rows, start=1)
+                for idx, row in enumerate(rows, start=1)
             ]
         finally:
             if should_close:
