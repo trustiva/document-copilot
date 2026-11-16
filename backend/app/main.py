@@ -1,6 +1,7 @@
 from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.api import threads
 from app.auth.dependencies import CurrentUser, get_current_user
 from app.config import settings
 
@@ -12,6 +13,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(threads.router)
 
 COMPANIES = [
     {"ticker": "AAPL", "name": "Apple Inc.", "cik": "0000320193"},
