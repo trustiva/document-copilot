@@ -2,7 +2,8 @@ import uuid
 from datetime import date, datetime
 
 from pgvector.sqlalchemy import Vector
-from sqlalchemy import ForeignKey, Text, func
+from sqlalchemy import Computed, ForeignKey, Text, func
+from sqlalchemy.dialects.postgresql import TSVECTOR
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -37,6 +38,11 @@ class DocumentChunk(Base):
     chunk_index: Mapped[int]
     content: Mapped[str] = mapped_column(Text)
     embedding = mapped_column(Vector(1536))
+    search_vector = mapped_column(
+        TSVECTOR,
+        Computed("to_tsvector('english', content)", persisted=True),
+        nullable=True,
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     document: Mapped[SourceDocument] = relationship(back_populates="chunks")
