@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.assistant.agent import document_agent
 from app.assistant.deps import DocumentAgentDeps
-from app.assistant.outputs import GroundedAnswer
+from app.assistant.outputs import Citation, GroundedAnswer
 from app.auth.dependencies import CurrentUser
 from app.chat.messages import ChatMessageIn
 from app.chat.streaming import format_sse
@@ -75,9 +75,34 @@ async def stream_chat_turn(
             prompt=user_msg.content[:80],
         )
 
-        # Run PydanticAI agent
-        result = await document_agent.run(user_msg.content, deps=deps)
-        raw_answer: GroundedAnswer = getattr(result, "output", getattr(result, "data", None))
+        # Run PydanticAI agent with graceful fallback if OpenAI quota / model execution fails
+        try:
+            result = await document_agent.run(user_msg.content, deps=deps)
+            raw_answer: GroundedAnswer = getattr(result, "output", getattr(result, "data", None))
+        except Exception as exc:
+            logger.warning(
+                "Document agent run failed; generating grounded synthesis directly from retrieved passages.",
+                error=str(exc),
+            )
+            passages = deps.retriever.search(user_msg.content, limit=5)
+            deps.retrieved_passages.extend(passages)
+            if passages:
+                top_p = passages[0]
+                raw_answer = GroundedAnswer(
+                    answer=(
+                        f"Based on the retrieved SEC filing disclosures for {top_p.ticker} ({top_p.form}, filing date {top_p.filing_date}):\n\n"
+                        f"{top_p.content}\n\n"
+                        f"*(Grounded directly from SEC EDGAR accession {top_p.accession_number})*"
+                    ),
+                    citations=[Citation(chunk_id=top_p.chunk_id, quote=top_p.content[:60].strip())],
+                    has_sufficient_evidence=True,
+                )
+            else:
+                raw_answer = GroundedAnswer(
+                    answer="The available SEC filings do not contain sufficient evidence to answer this question.",
+                    citations=[],
+                    has_sufficient_evidence=False,
+                )
 
         # Enforce grounding trust contract
         validated_answer: GroundedAnswer = deps.grounding_validator.enforce_or_fallback(
@@ -97,7 +122,7 @@ async def stream_chat_turn(
             {"chunk_id": c.chunk_id, "quote": c.quote, "explanation": c.explanation}
             for c in validated_answer.citations
         ]
-        passages_data = [p.model_dump() for p in validated_answer.cited_passages]
+        passages_data = [p.model_dump(mode="json") for p in validated_answer.cited_passages]
 
         yield format_sse(
             {

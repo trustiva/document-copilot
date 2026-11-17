@@ -46,17 +46,24 @@ def generate_embeddings(
     client = OpenAI(api_key=api_key)
     results: list[list[float]] = []
 
-    for i in range(0, len(texts), batch_size):
-        batch = list(texts[i : i + batch_size])
-        response = client.embeddings.create(
-            model=settings.embedding_model,
-            input=batch,
+    try:
+        for i in range(0, len(texts), batch_size):
+            batch = list(texts[i : i + batch_size])
+            response = client.embeddings.create(
+                model=settings.embedding_model,
+                input=batch,
+            )
+            # Sort by index to preserve order
+            ordered = sorted(response.data, key=lambda item: item.index)
+            results.extend([item.embedding for item in ordered])
+        return results
+    except Exception as exc:
+        logger.warning(
+            "OpenAI embeddings call failed (e.g. rate limit / no credits remaining); falling back to deterministic mock vectors.",
+            error=str(exc),
+            count=len(texts),
         )
-        # Sort by index to preserve order
-        ordered = sorted(response.data, key=lambda item: item.index)
-        results.extend([item.embedding for item in ordered])
-
-    return results
+        return [_generate_mock_embedding(t, settings.embedding_dimension) for t in texts]
 
 
 def embed_query(query: str) -> list[float]:

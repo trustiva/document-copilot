@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import uuid
 
+import httpx
 import pytest
 from starlette.testclient import TestClient
 
@@ -99,7 +100,8 @@ async def test_stream_chat_turn_end_to_end() -> None:
         assert len(assistant_m.content) > 0
 
 
-def test_chat_stream_api_endpoint() -> None:
+@pytest.mark.anyio
+async def test_chat_stream_api_endpoint() -> None:
     test_user_id = f"test-user-{uuid.uuid4().hex[:8]}"
     mock_user = CurrentUser(id=test_user_id, email="analyst@driftwood.com")
 
@@ -110,16 +112,16 @@ def test_chat_stream_api_endpoint() -> None:
             thread = create_user_thread(db, user_id=test_user_id, title="Test API Stream")
             thread_id = thread.id
 
-        client = TestClient(app)
-        response = client.post(
-            "/chat/stream",
-            json={
-                "threadId": str(thread_id),
-                "messages": [
-                    {"role": "user", "content": "Summarize Microsoft cloud revenue growth."}
-                ],
-            },
-        )
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as client:
+            response = await client.post(
+                "/chat/stream",
+                json={
+                    "threadId": str(thread_id),
+                    "messages": [
+                        {"role": "user", "content": "Summarize Microsoft cloud revenue growth."}
+                    ],
+                },
+            )
 
         assert response.status_code == 200
         assert "text/event-stream" in response.headers["content-type"]

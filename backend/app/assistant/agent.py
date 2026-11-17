@@ -6,9 +6,11 @@ from pathlib import Path
 from typing import Any
 
 import structlog
+from openai import AsyncOpenAI
 from pydantic_ai import Agent, RunContext
 from pydantic_ai.models.openai import OpenAIChatModel
 from pydantic_ai.models.test import TestModel
+from pydantic_ai.providers.openai import OpenAIProvider
 
 from app.assistant.deps import DocumentAgentDeps
 from app.assistant.outputs import GroundedAnswer
@@ -32,7 +34,8 @@ def _resolve_model(model: Any | None = None) -> Any:
     api_key = settings.openai_api_key
     if api_key and not api_key.startswith("your-") and api_key != "mock":
         os.environ.setdefault("OPENAI_API_KEY", api_key)
-        return OpenAIChatModel(settings.llm_model)
+        client = AsyncOpenAI(api_key=api_key, max_retries=0)
+        return OpenAIChatModel(settings.llm_model, provider=OpenAIProvider(openai_client=client))
 
     logger.warning("OPENAI_API_KEY is not configured; using TestModel for agent.")
     return TestModel()
