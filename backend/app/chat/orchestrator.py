@@ -75,7 +75,7 @@ async def stream_chat_turn(
             prompt=user_msg.content[:80],
         )
 
-        # Run PydanticAI agent with graceful fallback if OpenAI quota / model execution fails
+        # Run PydanticAI agent with graceful fallback if Gemini API quota / model execution fails
         try:
             result = await document_agent.run(user_msg.content, deps=deps)
             raw_answer: GroundedAnswer = getattr(result, "output", getattr(result, "data", None))

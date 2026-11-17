@@ -18,7 +18,7 @@ Document Copilot follows a two-tier service architecture on Railway, with durabl
 
 3. **External Cloud Services**:
    - **Supabase**: Managed PostgreSQL 15+ instance with `pgvector`, Auth, and session pooler.
-   - **OpenAI**: Embeddings (`text-embedding-3-small`) and generation (`gpt-4o-mini`).
+   - **Google Gemini**: Embeddings (`text-embedding-004`) and generation (`gemini-2.5-flash`).
 
 ---
 
@@ -42,7 +42,7 @@ Document Copilot follows a two-tier service architecture on Railway, with durabl
    DATABASE_URL=postgresql+psycopg://postgres:<PASSWORD>@<HOST>:5432/postgres?sslmode=require
    SUPABASE_URL=https://<YOUR_PROJECT_REF>.supabase.co
    SUPABASE_ANON_KEY=<YOUR_SUPABASE_ANON_KEY>
-   OPENAI_API_KEY=<YOUR_OPENAI_API_KEY>
+   GEMINI_API_KEY=<YOUR_GEMINI_API_KEY>
    ```
 4. Click **Deploy**.
 

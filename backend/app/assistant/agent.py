@@ -6,11 +6,10 @@ from pathlib import Path
 from typing import Any
 
 import structlog
-from openai import AsyncOpenAI
 from pydantic_ai import Agent, RunContext
-from pydantic_ai.models.openai import OpenAIChatModel
+from pydantic_ai.models.google import GoogleModel
 from pydantic_ai.models.test import TestModel
-from pydantic_ai.providers.openai import OpenAIProvider
+from pydantic_ai.providers.google import GoogleProvider
 
 from app.assistant.deps import DocumentAgentDeps
 from app.assistant.outputs import GroundedAnswer
@@ -27,17 +26,20 @@ SYSTEM_INSTRUCTIONS = (
 
 
 def _resolve_model(model: Any | None = None) -> Any:
-    """Resolve the LLM model to use, falling back to TestModel when no API key is set."""
+    """Resolve the LLM model to use, falling back to TestModel when no Gemini API key is set."""
     if model is not None:
         return model
 
-    api_key = settings.openai_api_key
+    api_key = settings.effective_gemini_api_key
     if api_key and not api_key.startswith("your-") and api_key != "mock":
-        os.environ.setdefault("OPENAI_API_KEY", api_key)
-        client = AsyncOpenAI(api_key=api_key, max_retries=0)
-        return OpenAIChatModel(settings.llm_model, provider=OpenAIProvider(openai_client=client))
+        os.environ.setdefault("GEMINI_API_KEY", api_key)
+        os.environ.setdefault("GOOGLE_API_KEY", api_key)
+        return GoogleModel(
+            settings.llm_model,
+            provider=GoogleProvider(api_key=api_key),
+        )
 
-    logger.warning("OPENAI_API_KEY is not configured; using TestModel for agent.")
+    logger.warning("GEMINI_API_KEY is not configured; using TestModel for agent.")
     return TestModel()
 
 
@@ -61,26 +63,29 @@ def create_document_agent(
         ticker: str | None = None,
     ) -> str:
         """Search SEC filings using hybrid semantic vector and full-text keyword retrieval."""
-        passages = ctx.deps.retriever.search(query, ticker=ticker, limit=8)
+        passages = ctx.deps.retriever.search(query, ticker=ticker, limit=5)
         ctx.deps.retrieved_passages.extend(passages)
         if not passages:
-            return "No matching SEC filing passages found for query."
+            return f"No filings matched query '{query}'" + (f" for ticker {ticker}" if ticker else "")
 
-        formatted: list[str] = []
+        summary_lines = []
         for p in passages:
-            formatted.append(
-                f"--- CHUNK ID: {p.chunk_id} | {p.ticker} {p.form} {p.filing_date} (Score: {p.score:.3f}) ---\n"
+            summary_lines.append(
+                f"[Chunk {p.chunk_id}] {p.ticker} ({p.form}, filing date {p.filing_date}, Item: {p.section or 'General'}):\n"
                 f"{p.content}\n"
             )
-        return "\n".join(formatted)
+        return "\n---\n".join(summary_lines)
 
     @agent.tool
-    def read_chunk(ctx: RunContext[DocumentAgentDeps], chunk_id: str) -> str:
-        """Fetch the full content of a specific chunk by its UUID string."""
+    def read_chunk(
+        ctx: RunContext[DocumentAgentDeps],
+        chunk_id: str,
+    ) -> str:
+        """Read the full content and metadata of a specific chunk by its chunk_id UUID."""
         try:
-            cid = uuid.UUID(chunk_id.strip())
+            cid = uuid.UUID(chunk_id)
         except ValueError:
-            return f"Invalid UUID format: {chunk_id}"
+            return f"Invalid chunk_id UUID format: '{chunk_id}'"
 
         passage = ctx.deps.retriever.get_chunk_by_id(cid)
         if not passage:
@@ -88,7 +93,7 @@ def create_document_agent(
 
         ctx.deps.retrieved_passages.append(passage)
         return (
-            f"--- CHUNK ID: {passage.chunk_id} | {passage.ticker} {passage.form} {passage.filing_date} ---\n"
+            f"[Chunk {passage.chunk_id}] {passage.ticker} {passage.form} (filed {passage.filing_date}):\n"
             f"{passage.content}"
         )
 
@@ -98,27 +103,25 @@ def create_document_agent(
         chunk_id: str,
         window: int = 1,
     ) -> str:
-        """Fetch surrounding chunks (+/- window) around a chunk ID for broader context."""
+        """Retrieve adjacent context chunks before and after the target chunk to examine surrounding text or tables."""
         try:
-            cid = uuid.UUID(chunk_id.strip())
+            cid = uuid.UUID(chunk_id)
         except ValueError:
-            return f"Invalid UUID format: {chunk_id}"
+            return f"Invalid chunk_id UUID format: '{chunk_id}'"
 
         surrounding = ctx.deps.retriever.get_surrounding_chunks(cid, window=window)
         if not surrounding:
             return f"No surrounding chunks found for {chunk_id}."
 
         ctx.deps.retrieved_passages.extend(surrounding)
-        formatted: list[str] = []
+        output = [f"Surrounding context for chunk {chunk_id}:"]
         for p in surrounding:
-            formatted.append(
-                f"--- CHUNK #{p.chunk_index} | ID: {p.chunk_id} | {p.ticker} {p.form} {p.filing_date} ---\n"
-                f"{p.content}\n"
+            output.append(
+                f"\n[Chunk {p.chunk_id} | Index {p.chunk_index}]:\n{p.content}"
             )
-        return "\n".join(formatted)
+        return "\n".join(output)
 
     return agent
 
 
-# Global default agent instance
 document_agent = create_document_agent()
