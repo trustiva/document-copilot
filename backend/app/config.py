@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     embedding_model: str = "text-embedding-3-small"
     embedding_dimension: int = 1536
+    llm_model: str = "gpt-4o-mini"
 
 
 settings = Settings()

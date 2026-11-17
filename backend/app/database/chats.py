@@ -81,3 +81,32 @@ def create_thread_message(
     db.commit()
     db.refresh(message)
     return message
+
+
+def create_assistant_message_with_citations(
+    db: Session,
+    thread: ChatThread,
+    content: str,
+    citations: list[dict],
+) -> ChatMessage:
+    """Create assistant message and persist its associated source citations atomically."""
+    message = ChatMessage(
+        thread_id=thread.id,
+        role="assistant",
+        content=content,
+    )
+    db.add(message)
+    db.flush()
+
+    for c in citations:
+        citation_obj = MessageCitation(
+            message_id=message.id,
+            chunk_id=c["chunk_id"],
+            quote=c.get("quote"),
+        )
+        db.add(citation_obj)
+
+    thread.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(message)
+    return message
